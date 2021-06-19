@@ -1,0 +1,6 @@
+pycocotools
+nuscenes-devkit
+future
+tqdm
+matplotlib
+opencv-python

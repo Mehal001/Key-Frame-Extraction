@@ -1,0 +1,13 @@
+mmdetection/faster_rcnn_r50_fpn_3x_results_1
+mmdetection/faster_rcnn_r50_fpn_3x_results_2
+mmdetection/myconfig_nucoco_10classes
+mmdetection/configs/nucoco/mini_train
+mmdetection/configs/nucoco/mini_val
+mmdetection/configs/nucoco/test
+mmdetection/configs/nucoco/test_6
+mmdetection/configs/nucoco/train
+mmdetection/configs/nucoco/train_6
+mmdetection/configs/nucoco/val
+mmdetection/configs/nucoco/val_6
+mmdetection/count_fulldataset.json
+

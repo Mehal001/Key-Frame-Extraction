@@ -1,0 +1,10 @@
+2021-05-21 17:44:45,429 - mmdet - INFO - load checkpoint from chkpoint/faster_rcnn_r50_caffe_fpn_mstrain_3x_coco_bbox_mAP-0.398_20200504_163323-30042637.pth
+2021-05-21 17:44:45,430 - mmdet - INFO - Use load_from_local loader
+2021-05-21 17:44:47,387 - mmdet - WARNING - The model and loaded state dict do not match exactly
+
+size mismatch for roi_head.bbox_head.fc_cls.weight: copying a param with shape torch.Size([81, 1024]) from checkpoint, the shape in current model is torch.Size([7, 1024]).
+size mismatch for roi_head.bbox_head.fc_cls.bias: copying a param with shape torch.Size([81]) from checkpoint, the shape in current model is torch.Size([7]).
+size mismatch for roi_head.bbox_head.fc_reg.weight: copying a param with shape torch.Size([320, 1024]) from checkpoint, the shape in current model is torch.Size([24, 1024]).
+size mismatch for roi_head.bbox_head.fc_reg.bias: copying a param with shape torch.Size([320]) from checkpoint, the shape in current model is torch.Size([24]).
+2021-05-21 17:44:47,390 - mmdet - INFO - Start running, host: acct1002_15@mdeep02, work_dir: /home/students/acct1002_15/mmdetection/work_dirs/modified_config_exps
+2021-05-21 17:44:47,390 - mmdet - INFO - workflow: [('train', 1)], max: 36 epochs
