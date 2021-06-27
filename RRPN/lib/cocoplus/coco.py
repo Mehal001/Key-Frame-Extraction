@@ -147,6 +147,7 @@ class COCO_PLUS(COCO):
                   anns, 
                   pointcloud=None,
                   img_id=None,
+                  camera_name=None,
                   img_format='BGR', 
                   write_img=True,
                   other=None):
@@ -178,6 +179,7 @@ class COCO_PLUS(COCO):
         img_info = self._createImageInfo(height=heigth, 
                                          width=width, 
                                          img_id=img_id,
+                                         camera_name=camera_name,
                                          other=other)
         # Update the dataset and index
         self.dataset['images'].append(img_info)
@@ -229,6 +231,7 @@ class COCO_PLUS(COCO):
                          height,
                          width, 
                          img_id=None, 
+                         camera_name=None,
                          license=0, 
                          flickr_url='',
                          coco_url='', 
@@ -256,6 +259,7 @@ class COCO_PLUS(COCO):
             filename = None
 
         img_info={"id" : img_id,
+                  "camera_name": camera_name,
                   "width" : width,
                   "height" : height,
                   "file_name" : filename,

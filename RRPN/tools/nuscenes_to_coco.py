@@ -12,7 +12,8 @@ from pynuscenes.utils.nuscenes_utils import nuscenes_box_to_coco, nuscene_cat_to
 from pynuscenes.nuscenes_dataset import NuscenesDataset
 from nuscenes.utils.geometry_utils import view_points
 IS_MY_VERSION = True
-IS_MY_VERSION_2 = True 
+IS_MY_VERSION_2 = True
+IS_MY_VERSION_3 = True 
 
 def parse_args():
     # Parse the input arguments
@@ -119,6 +120,9 @@ def main():
             pc = sample['radar'][i]
             cam_cs_record = cam_sample['cs_record']
             img_height, img_width, _ = image.shape
+            
+            if IS_MY_VERSION_3:
+                camera_name = cam_sample['camera_name']
 
             # Create annotation in coco_dataset format
             sample_anns = []
@@ -159,14 +163,25 @@ def main():
             pc_coco = np.transpose(pc_coco).tolist()
 
             ## Add sample to the COCO dataset
-            coco_img_path = coco_dataset.addSample(img=image,
-                                           anns=sample_anns, 
-                                           pointcloud=pc_coco,
-                                           img_id=img_id,
-                                           other=cam_cs_record,
-                                           img_format='RGB',
-                                           write_img= not args.use_symlinks,
-                                           )
+            if IS_MY_VERSION_3: 
+                coco_img_path = coco_dataset.addSample(img=image,
+                                                anns=sample_anns, 
+                                                pointcloud=pc_coco,
+                                                img_id=img_id,
+                                                camera_name=camera_name,
+                                                other=cam_cs_record,
+                                                img_format='RGB',
+                                                write_img= not args.use_symlinks,
+                                                )
+            else:
+                coco_img_path = coco_dataset.addSample(img=image,
+                                                anns=sample_anns, 
+                                                pointcloud=pc_coco,
+                                                img_id=img_id,
+                                                other=cam_cs_record,
+                                                img_format='RGB',
+                                                write_img= not args.use_symlinks,
+                                                )
             
             if args.use_symlinks:
                 try:
