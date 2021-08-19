@@ -7,6 +7,9 @@ from mmdet.core import (bbox2roi, bbox_mapping, merge_aug_bboxes,
                         merge_aug_masks, multiclass_nms)
 
 logger = logging.getLogger(__name__)
+import snoop
+
+IS_MY_VERSION = True 
 
 if sys.version_info >= (3, 7):
     from mmdet.utils.contextmanagers import completed
@@ -48,7 +51,7 @@ class BBoxTestMixin(object):
                 rescale=rescale,
                 cfg=rcnn_test_cfg)
             return det_bboxes, det_labels
-
+    # @snoop
     def simple_test_bboxes(self,
                            x,
                            img_metas,
@@ -109,15 +112,22 @@ class BBoxTestMixin(object):
         cls_score = bbox_results['cls_score']
         bbox_pred = bbox_results['bbox_pred']
 
+        if IS_MY_VERSION:
+            visib_score = bbox_results['visib_score']
+
         # Recover the batch dimension
         rois = rois.reshape(batch_size, num_proposals_per_img, rois.size(-1))
         cls_score = cls_score.reshape(batch_size, num_proposals_per_img,
                                       cls_score.size(-1))
-
+        if IS_MY_VERSION:
+            visib_score = visib_score.reshape(batch_size, num_proposals_per_img,
+                                      visib_score.size(-1))
         if not torch.onnx.is_in_onnx_export():
             # remove padding, ignore batch_index when calculating mask
             supplement_mask = rois.abs()[..., 1:].sum(dim=-1) == 0
             cls_score[supplement_mask, :] = 0
+            if IS_MY_VERSION:
+                visib_score[supplement_mask, :] = 0
 
         # bbox_pred would be None in some detector when with_reg is False,
         # e.g. Grid R-CNN.
@@ -155,15 +165,26 @@ class BBoxTestMixin(object):
                 return det_bboxes, det_labels
         else:
             bbox_pred = None
-
-        return self.bbox_head.get_bboxes(
+        
+        if IS_MY_VERSION:
+            return self.bbox_head.get_bboxes(
             rois,
             cls_score,
+            visib_score,
             bbox_pred,
             img_shapes,
             scale_factors,
             rescale=rescale,
             cfg=rcnn_test_cfg)
+        else:    
+            return self.bbox_head.get_bboxes(
+                rois,
+                cls_score,
+                bbox_pred,
+                img_shapes,
+                scale_factors,
+                rescale=rescale,
+                cfg=rcnn_test_cfg)
 
     def aug_test_bboxes(self, feats, img_metas, proposal_list, rcnn_test_cfg):
         """Test det bboxes with test time augmentation."""

@@ -11,17 +11,19 @@ from mmdet.models.losses import accuracy
 import snoop 
 
 @HEADS.register_module()
-class BBoxHead(BaseModule):
+class BBoxHead_new(BaseModule):
     """Simplest RoI head, with only two fc layers for classification and
     regression respectively."""
-    # @snoop
+
     def __init__(self,
                  with_avg_pool=False,
-                 with_cls=True,
+                 with_object_cls=True,
+                 with_visib_cls =True,
                  with_reg=True,
                  roi_feat_size=7,
                  in_channels=256,
-                 num_classes=80,
+                 num_object_classes=80,
+                 num_visib_classes=4,
                  bbox_coder=dict(
                      type='DeltaXYWHBBoxCoder',
                      clip_border=True,
@@ -36,15 +38,17 @@ class BBoxHead(BaseModule):
                  loss_bbox=dict(
                      type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
                  init_cfg=None):
-        super(BBoxHead, self).__init__(init_cfg)
-        assert with_cls or with_reg
+        super(BBoxHead_new, self).__init__(init_cfg)
+        assert with_object_cls or with_visib_cls or with_reg
         self.with_avg_pool = with_avg_pool
-        self.with_cls = with_cls
+        self.with_object_cls = with_object_cls
+        self.with_visib_cls = with_visib_cls
         self.with_reg = with_reg
         self.roi_feat_size = _pair(roi_feat_size)
         self.roi_feat_area = self.roi_feat_size[0] * self.roi_feat_size[1]
         self.in_channels = in_channels
-        self.num_classes = num_classes
+        self.num_object_classes = num_object_classes
+        self.num_visib_classes = num_visib_classes
         self.reg_class_agnostic = reg_class_agnostic
         self.reg_decoded_bbox = reg_decoded_bbox
         self.fp16_enabled = False
@@ -58,19 +62,26 @@ class BBoxHead(BaseModule):
             self.avg_pool = nn.AvgPool2d(self.roi_feat_size)
         else:
             in_channels *= self.roi_feat_area
-        if self.with_cls:
+        if self.with_object_cls:
             # need to add background class
-            self.fc_cls = nn.Linear(in_channels, num_classes + 1)
+            self.fc_object_cls = nn.Linear(in_channels, num_object_classes + 1)
+        if self.with_visib_cls:
+            self.fc_visib_cls = nn.Linear(in_channels, num_visib_classes)
         if self.with_reg:
-            out_dim_reg = 4 if reg_class_agnostic else 4 * num_classes
+            out_dim_reg = 4 if reg_class_agnostic else 4 * num_object_classes
             self.fc_reg = nn.Linear(in_channels, out_dim_reg)
         self.debug_imgs = None
         if init_cfg is None:
             self.init_cfg = []
-            if self.with_cls:
+            if self.with_object_cls:
                 self.init_cfg += [
                     dict(
-                        type='Normal', std=0.01, override=dict(name='fc_cls'))
+                        type='Normal', std=0.01, override=dict(name='fc_object_cls'))
+                ]
+            if self.with_visib_cls:
+                self.init_cfg += [
+                    dict(
+                        type='Normal', std=0.01, override=dict(name='fc_visib_cls'))
                 ]
             if self.with_reg:
                 self.init_cfg += [
@@ -79,17 +90,17 @@ class BBoxHead(BaseModule):
                 ]
 
     @auto_fp16()
-    # @snoop
     def forward(self, x):
         if self.with_avg_pool:
             x = self.avg_pool(x)
         x = x.view(x.size(0), -1)
-        cls_score = self.fc_cls(x) if self.with_cls else None
+        cls_score = self.fc_object_cls(x) if self.with_object_cls else None
         bbox_pred = self.fc_reg(x) if self.with_reg else None
-        return cls_score, bbox_pred
-    # @snoop
+        visib_score = self.fc_visib_cls(x) if self.with_visib_cls else None
+        return cls_score, visib_score, bbox_pred
+
     def _get_target_single(self, pos_bboxes, neg_bboxes, pos_gt_bboxes,
-                           pos_gt_labels, cfg):
+                           pos_gt_labels, pos_gt_labels_2, cfg):
         """Calculate the ground truth for proposals in the single image
         according to the sampling results.
 
@@ -129,15 +140,21 @@ class BBoxHead(BaseModule):
         # now use empty & fill because BG cat_id = num_classes,
         # FG cat_id = [0, num_classes-1]
         labels = pos_bboxes.new_full((num_samples, ),
-                                     self.num_classes,
+                                     self.num_object_classes,
+                                     dtype=torch.long)
+        labels_2 = pos_bboxes.new_full((num_samples, ),
+                                     self.num_visib_classes,
                                      dtype=torch.long)
         label_weights = pos_bboxes.new_zeros(num_samples)
+        label_2_weights = pos_bboxes.new_zeros(num_samples)
         bbox_targets = pos_bboxes.new_zeros(num_samples, 4)
         bbox_weights = pos_bboxes.new_zeros(num_samples, 4)
         if num_pos > 0:
             labels[:num_pos] = pos_gt_labels
+            labels_2[:num_pos] = pos_gt_labels_2
             pos_weight = 1.0 if cfg.pos_weight <= 0 else cfg.pos_weight
             label_weights[:num_pos] = pos_weight
+            label_2_weights[:num_pos] = pos_weight
             if not self.reg_decoded_bbox:
                 pos_bbox_targets = self.bbox_coder.encode(
                     pos_bboxes, pos_gt_bboxes)
@@ -151,13 +168,15 @@ class BBoxHead(BaseModule):
             bbox_weights[:num_pos, :] = 1
         if num_neg > 0:
             label_weights[-num_neg:] = 1.0
+            label_2_weights[-num_neg:] = 1.0
 
-        return labels, label_weights, bbox_targets, bbox_weights
+        return labels, label_weights, labels_2, label_2_weights, bbox_targets, bbox_weights
     # @snoop
     def get_targets(self,
                     sampling_results,
                     gt_bboxes,
                     gt_labels,
+                    gt_labels_2,
                     rcnn_train_cfg,
                     concat=True):
         """Calculate the ground truth for all samples in a batch according to
@@ -206,33 +225,44 @@ class BBoxHead(BaseModule):
         neg_bboxes_list = [res.neg_bboxes for res in sampling_results]
         pos_gt_bboxes_list = [res.pos_gt_bboxes for res in sampling_results]
         pos_gt_labels_list = [res.pos_gt_labels for res in sampling_results]
-        labels, label_weights, bbox_targets, bbox_weights = multi_apply(
+        pos_gt_labels_2_list = [res.pos_gt_labels_2 for res in sampling_results]
+        labels, label_weights, labels_2, label_2_weights, bbox_targets, bbox_weights = multi_apply(
             self._get_target_single,
             pos_bboxes_list,
             neg_bboxes_list,
             pos_gt_bboxes_list,
             pos_gt_labels_list,
+            pos_gt_labels_2_list,
             cfg=rcnn_train_cfg)
 
         if concat:
             labels = torch.cat(labels, 0)
             label_weights = torch.cat(label_weights, 0)
+            labels_2 = torch.cat(labels_2, 0)
+            label_2_weights = torch.cat(label_2_weights, 0)
             bbox_targets = torch.cat(bbox_targets, 0)
             bbox_weights = torch.cat(bbox_weights, 0)
-        return labels, label_weights, bbox_targets, bbox_weights
+        return labels, label_weights, labels_2, label_2_weights, bbox_targets, bbox_weights
 
-    @force_fp32(apply_to=('cls_score', 'bbox_pred'))
+    @force_fp32(apply_to=('cls_score', 'bbox_pred', 'visib_score'))
     # @snoop
     def loss(self,
              cls_score,
+             visib_score,
              bbox_pred,
              rois,
              labels,
              label_weights,
+             labels_2,
+             label_2_weights,
              bbox_targets,
              bbox_weights,
              reduction_override=None):
         losses = dict()
+        # print(cls_score.shape, visib_score.shape)
+        # print(labels.shape, labels_2.shape)
+        # print(label_weights.shape, label_2_weights.shape)
+        # print(label_weights, label_2_weights)
         if cls_score is not None:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
             if cls_score.numel() > 0:
@@ -242,9 +272,24 @@ class BBoxHead(BaseModule):
                     label_weights,
                     avg_factor=avg_factor,
                     reduction_override=reduction_override)
-                losses['acc'] = accuracy(cls_score, labels)
+                losses['acc_cls'] = accuracy(cls_score, labels)
+        # print(labels_2-1)
+        # exit(0)
+        if visib_score is not None:
+            avg_factor = max(torch.sum(label_2_weights > 0).float().item(), 1.)
+            # exit(0)
+            if visib_score.numel() > 0:
+                losses['loss_visib'] = self.loss_cls(
+                    visib_score,
+                    labels_2-1,
+                    label_2_weights,
+                    avg_factor=avg_factor,
+                    reduction_override=reduction_override)
+                # exit(0)
+                losses['acc_visib'] = accuracy(visib_score, labels_2)
+        # exit(0)
         if bbox_pred is not None:
-            bg_class_ind = self.num_classes
+            bg_class_ind = self.num_object_classes
             # 0~self.num_classes-1 are FG, self.num_classes is BG
             pos_inds = (labels >= 0) & (labels < bg_class_ind)
             # do not perform bounding box regression for BG anymore.
@@ -272,11 +317,12 @@ class BBoxHead(BaseModule):
             else:
                 losses['loss_bbox'] = bbox_pred[pos_inds].sum()
         return losses
-
-    @force_fp32(apply_to=('cls_score', 'bbox_pred'))
+    # @snoop
+    @force_fp32(apply_to=('cls_score', 'bbox_pred', 'visib_score'))
     def get_bboxes(self,
                    rois,
                    cls_score,
+                   visib_score,
                    bbox_pred,
                    img_shape,
                    scale_factor,
@@ -325,8 +371,15 @@ class BBoxHead(BaseModule):
         if isinstance(cls_score, list):
             cls_score = sum(cls_score) / float(len(cls_score))
 
-        scores = F.softmax(
+        if isinstance(visib_score, list):
+            visib_score = sum(visib_score) / float(len(visib_score))
+
+        cls_scores = F.softmax(
             cls_score, dim=-1) if cls_score is not None else None
+
+        
+        visib_scores = F.softmax(
+            visib_score, dim=-1) if visib_score is not None else None
 
         batch_mode = True
         if rois.ndim == 2:
@@ -334,8 +387,10 @@ class BBoxHead(BaseModule):
             batch_mode = False
 
             # add batch dimension
-            if scores is not None:
-                scores = scores.unsqueeze(0)
+            if cls_scores is not None:
+                cls_scores = cls_scores.unsqueeze(0)
+            if visib_scores is not None:
+                visib_scores = visib_scores.unsqueeze(0)
             if bbox_pred is not None:
                 bbox_pred = bbox_pred.unsqueeze(0)
             rois = rois.unsqueeze(0)
@@ -364,16 +419,21 @@ class BBoxHead(BaseModule):
 
         # Replace multiclass_nms with ONNX::NonMaxSuppression in deployment
         if torch.onnx.is_in_onnx_export():
-            print('Hello')
             from mmdet.core.export import add_dummy_nms_for_onnx
-            batch_size = scores.shape[0]
+            batch_size = cls_scores.shape[0]
             # ignore background class
-            scores = scores[..., :self.num_classes]
+            cls_scores = cls_scores[..., :self.num_object_classes]
+            visib_scores = visib_scores[..., :self.num_visib_classes]
             labels = torch.arange(
-                self.num_classes, dtype=torch.long).to(scores.device)
-            labels = labels.view(1, 1, -1).expand_as(scores)
+                self.num_object_classes, dtype=torch.long).to(cls_scores.device)
+            labels_2 = torch.arange(
+                self.num_visib_classes, dtype=torch.long).to(visib_scores.device)
+            labels = labels.view(1, 1, -1).expand_as(cls_scores)
+            labels_2 = labels_2.view(1, 1, -1).expand_as(visib_scores)
             labels = labels.reshape(batch_size, -1)
-            scores = scores.reshape(batch_size, -1)
+            labels_2 = labels_2.reshape(batch_size, -1)
+            cls_scores = cls_scores.reshape(batch_size, -1)
+            visib_scores = visib_scores.reshape(batch_size, -1)
             bboxes = bboxes.reshape(batch_size, -1, 4)
 
             max_size = torch.max(img_shape)
@@ -388,7 +448,7 @@ class BBoxHead(BaseModule):
             nms_pre = cfg.get('deploy_nms_pre', -1)
             batch_dets, labels = add_dummy_nms_for_onnx(
                 bboxes_for_nms,
-                scores.unsqueeze(2),
+                cls_scores.unsqueeze(2),
                 max_output_boxes_per_class,
                 iou_threshold,
                 score_threshold,
@@ -405,19 +465,22 @@ class BBoxHead(BaseModule):
             return batch_dets, labels
         det_bboxes = []
         det_labels = []
-        for (bbox, score) in zip(bboxes, scores):
+      
+        for (bbox, cls_score, visib_score) in zip(bboxes, cls_scores, visib_scores):
             if cfg is not None:
-                det_bbox, det_label = multiclass_nms(bbox, score,
+                det_bbox, det_label = multiclass_nms(bbox, cls_score, visib_score,
                                                      cfg.score_thr, cfg.nms,
                                                      cfg.max_per_img)
             else:
-                det_bbox, det_label = bbox, score
+                det_bbox, det_label = bbox, cls_score, visib_score
             det_bboxes.append(det_bbox)
             det_labels.append(det_label)
+            
 
         if not batch_mode:
             det_bboxes = det_bboxes[0]
             det_labels = det_labels[0]
+            
         return det_bboxes, det_labels
 
     @force_fp32(apply_to=('bbox_preds', ))

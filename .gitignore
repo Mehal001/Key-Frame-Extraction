@@ -10,4 +10,17 @@ mmdetection/configs/nucoco/train_6
 mmdetection/configs/nucoco/val
 mmdetection/configs/nucoco/val_6
 mmdetection/count_fulldataset.json
+mmdetection/result_analysis_10classes
+mmdetection/myconfig_nucoco_10classes_results_20210702
+mmdetection/myconfig_nucoco_10classes_results
+mmdetection/results_error_analysis
+mmdetection/mini_1x_20210708
+mmdetection/results_2
+mmdetection/faster_rcnn_r50_caffe_fpn_mstrain_1x_nucoco_custom_20210811
+mmdetection/myconfig_nucoco_10classes_20210810
+mmdetection/results_3
+mmdetection/results.bbox.json
+mmdetection/cls_reg_losses_153609.pdf
+mmdetection/comp_153609_104917.pdf
+mmdetection/losses.pdf
 

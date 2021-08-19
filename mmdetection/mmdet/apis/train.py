@@ -14,6 +14,7 @@ from mmdet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
 from mmdet.utils import get_root_logger
 
+import snoop
 
 def set_random_seed(seed, deterministic=False):
     """Set random seed.
@@ -33,7 +34,7 @@ def set_random_seed(seed, deterministic=False):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-
+# @snoop
 def train_detector(model,
                    dataset,
                    cfg,

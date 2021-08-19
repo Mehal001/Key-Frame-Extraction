@@ -1,14 +1,13 @@
 import torch
 
-from mmdet.core import bbox2result, bbox2roi, build_assigner, build_sampler
+from mmdet.core import bbox2result, bbox2roi, build_assigner, build_sampler, bbox2result_new
 from ..builder import HEADS, build_head, build_roi_extractor
-from .base_roi_head import BaseRoIHead
+from .base_roi_head_new import BaseRoIHead_new
 from .test_mixins import BBoxTestMixin, MaskTestMixin
-
-import snoop 
+import snoop
 
 @HEADS.register_module()
-class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
+class StandardRoIHead_new(BaseRoIHead_new, BBoxTestMixin, MaskTestMixin):
     """Simplest base roi head including one bbox head and one mask head."""
 
     def init_assigner_sampler(self):
@@ -50,13 +49,14 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             mask_results = self._mask_forward(x, mask_rois)
             outs = outs + (mask_results['mask_pred'], )
         return outs
-    # @snoop
+
     def forward_train(self,
                       x,
                       img_metas,
                       proposal_list,
                       gt_bboxes,
                       gt_labels,
+                      gt_labels_2,
                       gt_bboxes_ignore=None,
                       gt_masks=None):
         """
@@ -88,12 +88,13 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             for i in range(num_imgs):
                 assign_result = self.bbox_assigner.assign(
                     proposal_list[i], gt_bboxes[i], gt_bboxes_ignore[i],
-                    gt_labels[i])
+                    gt_labels[i], gt_labels_2[i])
                 sampling_result = self.bbox_sampler.sample(
                     assign_result,
                     proposal_list[i],
                     gt_bboxes[i],
                     gt_labels[i],
+                    gt_labels_2[i],
                     feats=[lvl_feat[i][None] for lvl_feat in x])
                 sampling_results.append(sampling_result)
 
@@ -101,7 +102,7 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         # bbox head forward and loss
         if self.with_bbox:
             bbox_results = self._bbox_forward_train(x, sampling_results,
-                                                    gt_bboxes, gt_labels,
+                                                    gt_bboxes, gt_labels, gt_labels_2,
                                                     img_metas)
             losses.update(bbox_results['loss_bbox'])
 
@@ -113,7 +114,7 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             losses.update(mask_results['loss_mask'])
 
         return losses
-
+    # @snoop
     def _bbox_forward(self, x, rois):
         """Box head forward function used in both training and testing."""
         # TODO: a more flexible way to decide which feature maps to use
@@ -121,25 +122,27 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             x[:self.bbox_roi_extractor.num_inputs], rois)
         if self.with_shared_head:
             bbox_feats = self.shared_head(bbox_feats)
-        cls_score, bbox_pred = self.bbox_head(bbox_feats)
+        cls_score, visib_score, bbox_pred = self.bbox_head(bbox_feats)
 
         bbox_results = dict(
-            cls_score=cls_score, bbox_pred=bbox_pred, bbox_feats=bbox_feats)
+            cls_score=cls_score, bbox_pred=bbox_pred, visib_score=visib_score, bbox_feats=bbox_feats)
         return bbox_results
-
-    def _bbox_forward_train(self, x, sampling_results, gt_bboxes, gt_labels,
+    # @snoop
+    def _bbox_forward_train(self, x, sampling_results, gt_bboxes, gt_labels, gt_labels_2,
                             img_metas):
         """Run forward function and calculate loss for box head in training."""
         rois = bbox2roi([res.bboxes for res in sampling_results])
         bbox_results = self._bbox_forward(x, rois)
 
         bbox_targets = self.bbox_head.get_targets(sampling_results, gt_bboxes,
-                                                  gt_labels, self.train_cfg)
-        loss_bbox = self.bbox_head.loss(bbox_results['cls_score'],
+                                                  gt_labels, gt_labels_2, self.train_cfg)
+        # exit(0)
+        loss_bbox = self.bbox_head.loss(bbox_results['cls_score'], bbox_results['visib_score'],
                                         bbox_results['bbox_pred'], rois,
                                         *bbox_targets)
 
         bbox_results.update(loss_bbox=loss_bbox)
+        
         return bbox_results
 
     def _mask_forward_train(self, x, sampling_results, bbox_feats, gt_masks,
@@ -218,7 +221,7 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                 rescale=rescale,
                 mask_test_cfg=self.test_cfg.get('mask'))
             return bbox_results, segm_results
-
+    # @snoop
     def simple_test(self,
                     x,
                     proposal_list,
@@ -238,8 +241,8 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             return det_bboxes, det_labels
 
         bbox_results = [
-            bbox2result(det_bboxes[i], det_labels[i],
-                        self.bbox_head.num_classes)
+            bbox2result_new(det_bboxes[i], det_labels[i],
+                        self.bbox_head.num_object_classes)
             for i in range(len(det_bboxes))
         ]
 

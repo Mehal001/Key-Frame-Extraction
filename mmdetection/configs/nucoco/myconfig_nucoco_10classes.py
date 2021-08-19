@@ -23,13 +23,14 @@ val=dict(
     ann_file='configs/nucoco/val/instances_val.json'),
 test=dict(
     type = dataset_type,
-    img_prefix='configs/nucoco/test/',
+    img_prefix='configs/nucoco/val/',
     classes=classes,
-    ann_file='configs/nucoco/test/instances_test.json'))
+    ann_file='configs/nucoco/val/instances_val.json'))
 
 # optimizer = dict( lr = 0.001)
 #evaluation = dict(interval=100)
 #total_epochs = 100
 #optimizer = dict(type='SGD', lr=0.005, momentum=0.9, weight_decay=0.0001)
 # We can use the pre-trained Mask RCNN model to obtain higher performance
+workflow = [('train', 1), ('val', 1)]
 load_from = 'chkpoint/faster_rcnn_r50_caffe_fpn_mstrain_3x_coco_bbox_mAP-0.398_20200504_163323-30042637.pth'

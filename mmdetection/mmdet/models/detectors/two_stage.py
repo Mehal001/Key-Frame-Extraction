@@ -3,6 +3,8 @@ import torch
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .base import BaseDetector
 
+IS_MY_VERSION = True
+import snoop 
 
 @DETECTORS.register_module()
 class TwoStageDetector(BaseDetector):
@@ -80,12 +82,13 @@ class TwoStageDetector(BaseDetector):
         roi_outs = self.roi_head.forward_dummy(x, proposals)
         outs = outs + (roi_outs, )
         return outs
-
+    # @snoop
     def forward_train(self,
                       img,
                       img_metas,
                       gt_bboxes,
                       gt_labels,
+                      gt_labels_2,
                       gt_bboxes_ignore=None,
                       gt_masks=None,
                       proposals=None,
@@ -124,23 +127,42 @@ class TwoStageDetector(BaseDetector):
 
         # RPN forward and loss
         if self.with_rpn:
-            proposal_cfg = self.train_cfg.get('rpn_proposal',
+            if IS_MY_VERSION:
+                proposal_cfg = self.train_cfg.get('rpn_proposal',
                                               self.test_cfg.rpn)
-            rpn_losses, proposal_list = self.rpn_head.forward_train(
-                x,
-                img_metas,
-                gt_bboxes,
-                gt_labels=None,
-                gt_bboxes_ignore=gt_bboxes_ignore,
-                proposal_cfg=proposal_cfg)
-            losses.update(rpn_losses)
+                rpn_losses, proposal_list = self.rpn_head.forward_train(
+                    x,
+                    img_metas,
+                    gt_bboxes,
+                    gt_labels=None,
+                    # gt_labels_2=None,
+                    gt_bboxes_ignore=gt_bboxes_ignore,
+                    proposal_cfg=proposal_cfg)
+                losses.update(rpn_losses)
+            else:
+                proposal_cfg = self.train_cfg.get('rpn_proposal',
+                                                self.test_cfg.rpn)
+                rpn_losses, proposal_list = self.rpn_head.forward_train(
+                    x,
+                    img_metas,
+                    gt_bboxes,
+                    gt_labels=None,
+                    gt_bboxes_ignore=gt_bboxes_ignore,
+                    proposal_cfg=proposal_cfg)
+                losses.update(rpn_losses)
         else:
             proposal_list = proposals
 
-        roi_losses = self.roi_head.forward_train(x, img_metas, proposal_list,
-                                                 gt_bboxes, gt_labels,
+        if IS_MY_VERSION:
+            roi_losses = self.roi_head.forward_train(x, img_metas, proposal_list,
+                                                 gt_bboxes, gt_labels, gt_labels_2,
                                                  gt_bboxes_ignore, gt_masks,
                                                  **kwargs)
+        else:
+            roi_losses = self.roi_head.forward_train(x, img_metas, proposal_list,
+                                                    gt_bboxes, gt_labels,
+                                                    gt_bboxes_ignore, gt_masks,
+                                                    **kwargs)
         losses.update(roi_losses)
 
         return losses
@@ -162,7 +184,7 @@ class TwoStageDetector(BaseDetector):
 
         return await self.roi_head.async_simple_test(
             x, proposal_list, img_meta, rescale=rescale)
-
+    # @snoop
     def simple_test(self, img, img_metas, proposals=None, rescale=False):
         """Test without augmentation."""
         assert self.with_bbox, 'Bbox head must be implemented.'

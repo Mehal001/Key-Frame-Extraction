@@ -1,4 +1,4 @@
-_base_ = './faster_rcnn_r50_fpn_1x_coco.py'
+_base_ = './faster_rcnn_r50_fpn_1x_coco_custom.py'
 model = dict(
     # pretrained='open-mmlab://detectron2/resnet50_caffe',
     backbone=dict(
@@ -22,7 +22,7 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels']),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_labels_2']),
 ]
 test_pipeline = [
     dict(type='LoadImageFromFile'),

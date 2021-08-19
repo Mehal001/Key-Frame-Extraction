@@ -21,6 +21,7 @@ except ImportError:
     albumentations = None
     Compose = None
 
+import snoop 
 
 @PIPELINES.register_module()
 class Resize(object):
@@ -483,7 +484,7 @@ class RandomShift(object):
             The bbox and the rest of the targets below the width and
             height threshold will be filtered. Default 1.
     """
-
+    # @snoop 
     def __init__(self, shift_ratio=0.5, max_shift_px=32, filter_thr_px=1):
         assert 0 <= shift_ratio <= 1
         assert max_shift_px >= 0
@@ -708,7 +709,7 @@ class RandomCrop(object):
         - If the crop does not contain any gt-bbox region and
           `allow_negative_crop` is set to False, skip this image.
     """
-
+    # @snoop
     def __init__(self,
                  crop_size,
                  crop_type='absolute',

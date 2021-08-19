@@ -15,6 +15,8 @@ from .api_wrappers import COCO, COCOeval
 from .builder import DATASETS
 from .custom import CustomDataset
 
+IS_MY_VERSION_2 = True
+# import snoop
 
 @DATASETS.register_module()
 class CocoDataset(CustomDataset):
@@ -113,7 +115,7 @@ class CocoDataset(CustomDataset):
                 valid_img_ids.append(img_id)
         self.img_ids = valid_img_ids
         return valid_inds
-
+    # @snoop
     def _parse_ann_info(self, img_info, ann_info):
         """Parse bbox and mask annotation.
 
@@ -130,6 +132,8 @@ class CocoDataset(CustomDataset):
         gt_labels = []
         gt_bboxes_ignore = []
         gt_masks_ann = []
+        if IS_MY_VERSION_2:
+            gt_labels_2 =[]
         for i, ann in enumerate(ann_info):
             if ann.get('ignore', False):
                 continue
@@ -149,13 +153,19 @@ class CocoDataset(CustomDataset):
                 gt_bboxes.append(bbox)
                 gt_labels.append(self.cat2label[ann['category_id']])
                 gt_masks_ann.append(ann.get('segmentation', None))
+                if IS_MY_VERSION_2:
+                    gt_labels_2.append(ann['visibility'])
 
         if gt_bboxes:
             gt_bboxes = np.array(gt_bboxes, dtype=np.float32)
             gt_labels = np.array(gt_labels, dtype=np.int64)
+            if IS_MY_VERSION_2:
+                gt_labels_2 = np.array(gt_labels_2, dtype=np.int64)
         else:
             gt_bboxes = np.zeros((0, 4), dtype=np.float32)
             gt_labels = np.array([], dtype=np.int64)
+            if IS_MY_VERSION_2:
+                gt_labels_2 = np.array([], dtype=np.int64)
 
         if gt_bboxes_ignore:
             gt_bboxes_ignore = np.array(gt_bboxes_ignore, dtype=np.float32)
@@ -164,12 +174,21 @@ class CocoDataset(CustomDataset):
 
         seg_map = img_info['filename'].replace('jpg', 'png')
 
-        ann = dict(
-            bboxes=gt_bboxes,
-            labels=gt_labels,
-            bboxes_ignore=gt_bboxes_ignore,
-            masks=gt_masks_ann,
-            seg_map=seg_map)
+        if IS_MY_VERSION_2:
+            ann = dict(
+                bboxes=gt_bboxes,
+                labels=gt_labels,
+                labels_2 = gt_labels_2,
+                bboxes_ignore=gt_bboxes_ignore,
+                masks=gt_masks_ann,
+                seg_map=seg_map)
+        else:
+            ann = dict(
+                bboxes=gt_bboxes,
+                labels=gt_labels,
+                bboxes_ignore=gt_bboxes_ignore,
+                masks=gt_masks_ann,
+                seg_map=seg_map)
 
         return ann
 

@@ -7,6 +7,9 @@ import pycocotools.mask as maskUtils
 from mmdet.core import BitmapMasks, PolygonMasks
 from ..builder import PIPELINES
 
+import snoop 
+
+IS_MY_VERSION = True
 
 @PIPELINES.register_module()
 class LoadImageFromFile(object):
@@ -215,12 +218,15 @@ class LoadAnnotations(object):
     def __init__(self,
                  with_bbox=True,
                  with_label=True,
+                 with_label_2=True,
                  with_mask=False,
                  with_seg=False,
                  poly2mask=True,
                  file_client_args=dict(backend='disk')):
         self.with_bbox = with_bbox
         self.with_label = with_label
+        if IS_MY_VERSION:
+            self.with_label_2 = with_label_2
         self.with_mask = with_mask
         self.with_seg = with_seg
         self.poly2mask = poly2mask
@@ -258,6 +264,19 @@ class LoadAnnotations(object):
         """
 
         results['gt_labels'] = results['ann_info']['labels'].copy()
+        return results
+    # @snoop
+    def _load_labels_2(self, results):
+        """Private function to load label annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmdet.CustomDataset`.
+
+        Returns:
+            dict: The dict contains loaded label annotations.
+        """
+
+        results['gt_labels_2'] = results['ann_info']['labels_2'].copy()
         return results
 
     def _poly2mask(self, mask_ann, img_h, img_w):
@@ -367,6 +386,9 @@ class LoadAnnotations(object):
                 return None
         if self.with_label:
             results = self._load_labels(results)
+        if IS_MY_VERSION:
+            if self.with_label_2:
+                results = self._load_labels_2(results)
         if self.with_mask:
             results = self._load_masks(results)
         if self.with_seg:
@@ -451,7 +473,10 @@ class FilterAnnotations(object):
         if not keep.any():
             return None
         else:
-            keys = ('gt_bboxes', 'gt_labels', 'gt_masks', 'gt_semantic_seg')
+            if IS_MY_VERSION:
+                keys = ('gt_bboxes', 'gt_labels', 'gt_labels_2', 'gt_masks', 'gt_semantic_seg')
+            else:
+                keys = ('gt_bboxes', 'gt_labels', 'gt_masks', 'gt_semantic_seg')
             for key in keys:
                 if key in results:
                     results[key] = results[key][keep]

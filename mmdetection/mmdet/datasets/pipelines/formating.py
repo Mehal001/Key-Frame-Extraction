@@ -7,6 +7,8 @@ from mmcv.parallel import DataContainer as DC
 
 from ..builder import PIPELINES
 
+IS_MY_VERSION_3= True
+import snoop 
 
 def to_tensor(data):
     """Convert objects of various python types to :obj:`torch.Tensor`.
@@ -142,11 +144,16 @@ class ToDataContainer(object):
             Default: ``(dict(key='img', stack=True), dict(key='gt_bboxes'),
             dict(key='gt_labels'))``.
     """
-
-    def __init__(self,
-                 fields=(dict(key='img', stack=True), dict(key='gt_bboxes'),
-                         dict(key='gt_labels'))):
-        self.fields = fields
+    if IS_MY_VERSION_3:
+        def __init__(self,
+                    fields=(dict(key='img', stack=True), dict(key='gt_bboxes'),
+                            dict(key='gt_labels'), dict(key='gt_labels_2'))):
+            self.fields = fields
+    else:
+        def __init__(self,
+                    fields=(dict(key='img', stack=True), dict(key='gt_bboxes'),
+                            dict(key='gt_labels'))):
+            self.fields = fields
 
     def __call__(self, results):
         """Call function to convert data in results to
@@ -187,7 +194,7 @@ class DefaultFormatBundle(object):
     - gt_semantic_seg: (1)unsqueeze dim-0 (2)to tensor, \
                        (3)to DataContainer (stack=True)
     """
-
+    # @snoop
     def __call__(self, results):
         """Call function to transform and format common fields in results.
 
@@ -207,10 +214,17 @@ class DefaultFormatBundle(object):
                 img = np.expand_dims(img, -1)
             img = np.ascontiguousarray(img.transpose(2, 0, 1))
             results['img'] = DC(to_tensor(img), stack=True)
-        for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels']:
-            if key not in results:
-                continue
-            results[key] = DC(to_tensor(results[key]))
+        
+        if IS_MY_VERSION_3:
+            for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels', 'gt_labels_2']:
+                if key not in results:
+                    continue
+                results[key] = DC(to_tensor(results[key]))
+        else:
+            for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels']:
+                if key not in results:
+                    continue
+                results[key] = DC(to_tensor(results[key]))
         if 'gt_masks' in results:
             results['gt_masks'] = DC(results['gt_masks'], cpu_only=True)
         if 'gt_semantic_seg' in results:
@@ -294,7 +308,7 @@ class Collect(object):
                             'flip_direction', 'img_norm_cfg')):
         self.keys = keys
         self.meta_keys = meta_keys
-
+    # @snoop
     def __call__(self, results):
         """Call function to collect keys in results. The keys in ``meta_keys``
         will be converted to :obj:mmcv.DataContainer.

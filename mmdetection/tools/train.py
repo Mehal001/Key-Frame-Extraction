@@ -16,7 +16,7 @@ from mmdet.apis import set_random_seed, train_detector
 from mmdet.datasets import build_dataset
 from mmdet.models import build_detector
 from mmdet.utils import collect_env, get_root_logger
-
+import snoop 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -82,7 +82,7 @@ def parse_args():
 
     return args
 
-
+# @snoop
 def main():
     args = parse_args()
 

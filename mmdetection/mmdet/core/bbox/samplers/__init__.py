@@ -8,8 +8,13 @@ from .random_sampler import RandomSampler
 from .sampling_result import SamplingResult
 from .score_hlr_sampler import ScoreHLRSampler
 
+from .base_sampler_new import BaseSampler_new
+from .random_sampler_new import RandomSampler_new
+from .sampling_result_new import SamplingResult_new
+
 __all__ = [
     'BaseSampler', 'PseudoSampler', 'RandomSampler',
     'InstanceBalancedPosSampler', 'IoUBalancedNegSampler', 'CombinedSampler',
-    'OHEMSampler', 'SamplingResult', 'ScoreHLRSampler'
+    'OHEMSampler', 'SamplingResult', 'ScoreHLRSampler',
+    'BaseSampler_new', 'RandomSampler_new', 'SamplingResult_new'
 ]

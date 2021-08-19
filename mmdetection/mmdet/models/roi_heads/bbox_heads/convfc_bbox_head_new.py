@@ -2,26 +2,31 @@ import torch.nn as nn
 from mmcv.cnn import ConvModule
 
 from mmdet.models.builder import HEADS
-from .bbox_head import BBoxHead
+from .bbox_head_new import BBoxHead_new
 import snoop 
 
 @HEADS.register_module()
-class ConvFCBBoxHead(BBoxHead):
-    r"""More general bbox head, with shared conv and fc layers and two optional
+class ConvFCBBoxHead_new(BBoxHead_new):
+    r"""More general bbox head, with shared conv and fc layers and three optional
     separated branches.
 
     .. code-block:: none
 
-                                    /-> cls convs -> cls fcs -> cls
-        shared convs -> shared fcs
-                                    \-> reg convs -> reg fcs -> reg
+                                    /-> cls convs -> cls fcs -> cls (object)
+       
+       shared convs -> shared fcs   \-> reg convs -> reg fcs -> reg
+
+                                    \-> cls convs -> cls fcs -> cls (visibility)
+
     """  # noqa: W605
     # @snoop 
     def __init__(self,
                  num_shared_convs=0,
                  num_shared_fcs=0,
-                 num_cls_convs=0,
-                 num_cls_fcs=0,
+                 num_object_cls_convs=0,
+                 num_object_cls_fcs=0,
+                 num_visib_cls_convs=0,
+                 num_visib_cls_fcs=0,
                  num_reg_convs=0,
                  num_reg_fcs=0,
                  conv_out_channels=256,
@@ -31,20 +36,24 @@ class ConvFCBBoxHead(BBoxHead):
                  init_cfg=None,
                  *args,
                  **kwargs):
-        super(ConvFCBBoxHead, self).__init__(
+        super(ConvFCBBoxHead_new, self).__init__(
             *args, init_cfg=init_cfg, **kwargs)
-        assert (num_shared_convs + num_shared_fcs + num_cls_convs +
-                num_cls_fcs + num_reg_convs + num_reg_fcs > 0)
-        if num_cls_convs > 0 or num_reg_convs > 0:
+        assert (num_shared_convs + num_shared_fcs + num_object_cls_convs +
+                num_object_cls_fcs + num_visib_cls_convs + num_visib_cls_fcs + num_reg_convs + num_reg_fcs > 0)
+        if num_object_cls_convs > 0 or num_visib_cls_convs > 0 or num_reg_convs > 0:
             assert num_shared_fcs == 0
-        if not self.with_cls:
-            assert num_cls_convs == 0 and num_cls_fcs == 0
+        if not self.with_object_cls:
+            assert num_object_cls_convs == 0 and num_object_cls_fcs == 0
+        if not self.with_visib_cls:
+            assert num_visib_cls_convs == 0 and num_visib_cls_fcs == 0
         if not self.with_reg:
             assert num_reg_convs == 0 and num_reg_fcs == 0
         self.num_shared_convs = num_shared_convs
         self.num_shared_fcs = num_shared_fcs
-        self.num_cls_convs = num_cls_convs
-        self.num_cls_fcs = num_cls_fcs
+        self.num_object_cls_convs = num_object_cls_convs
+        self.num_object_cls_fcs = num_object_cls_fcs
+        self.num_visib_cls_convs = num_visib_cls_convs
+        self.num_visib_cls_fcs = num_visib_cls_fcs
         self.num_reg_convs = num_reg_convs
         self.num_reg_fcs = num_reg_fcs
         self.conv_out_channels = conv_out_channels
@@ -59,10 +68,16 @@ class ConvFCBBoxHead(BBoxHead):
                 True)
         self.shared_out_channels = last_layer_dim
 
-        # add cls specific branch
-        self.cls_convs, self.cls_fcs, self.cls_last_dim = \
+        # add object cls specific branch
+        self.object_cls_convs, self.object_cls_fcs, self.object_cls_last_dim = \
             self._add_conv_fc_branch(
-                self.num_cls_convs, self.num_cls_fcs, self.shared_out_channels)
+                self.num_object_cls_convs, self.num_object_cls_fcs, self.shared_out_channels)
+
+        # add visib cls specific branch
+        self.visib_cls_convs, self.visib_cls_fcs, self.visib_cls_last_dim = \
+            self._add_conv_fc_branch(
+                self.num_visib_cls_convs, self.num_visib_cls_fcs, self.shared_out_channels)
+
 
         # add reg specific branch
         self.reg_convs, self.reg_fcs, self.reg_last_dim = \
@@ -76,12 +91,14 @@ class ConvFCBBoxHead(BBoxHead):
                 self.reg_last_dim *= self.roi_feat_area
 
         self.relu = nn.ReLU(inplace=True)
-        # reconstruct fc_cls and fc_reg since input channels are changed
-        if self.with_cls:
-            self.fc_cls = nn.Linear(self.cls_last_dim, self.num_classes + 1)
+        # reconstruct fc_object_cls, fc_visib_cls and fc_reg since input channels are changed
+        if self.with_object_cls:
+            self.fc_object_cls = nn.Linear(self.object_cls_last_dim, self.num_object_classes + 1)
+        if self.with_visib_cls:
+            self.fc_visib_cls = nn.Linear(self.visib_cls_last_dim, self.num_visib_classes)
         if self.with_reg:
             out_dim_reg = (4 if self.reg_class_agnostic else 4 *
-                           self.num_classes)
+                           self.num_object_classes)
             self.fc_reg = nn.Linear(self.reg_last_dim, out_dim_reg)
 
         if init_cfg is None:
@@ -91,7 +108,8 @@ class ConvFCBBoxHead(BBoxHead):
                     layer='Linear',
                     override=[
                         dict(name='shared_fcs'),
-                        dict(name='cls_fcs'),
+                        dict(name='object_cls_fcs'),
+                        dict(name='visib_cls_fcs'),
                         dict(name='reg_fcs')
                     ])
             ]
@@ -153,17 +171,27 @@ class ConvFCBBoxHead(BBoxHead):
             for fc in self.shared_fcs:
                 x = self.relu(fc(x))
         # separate branches
-        x_cls = x
+        x_object_cls = x
+        x_visib_cls = x
         x_reg = x
 
-        for conv in self.cls_convs:
-            x_cls = conv(x_cls)
-        if x_cls.dim() > 2:
+        for conv in self.object_cls_convs:
+            x_object_cls = conv(x_object_cls)
+        if x_object_cls.dim() > 2:
             if self.with_avg_pool:
-                x_cls = self.avg_pool(x_cls)
-            x_cls = x_cls.flatten(1)
-        for fc in self.cls_fcs:
-            x_cls = self.relu(fc(x_cls))
+                x_object_cls = self.avg_pool(x_object_cls)
+            x_object_cls = x_object_cls.flatten(1)
+        for fc in self.object_cls_fcs:
+            x_object_cls = self.relu(fc(x_object_cls))
+
+        for conv in self.visib_cls_convs:
+            x_visib_cls = conv(x_visib_cls)
+        if x_visib_cls.dim() > 2:
+            if self.with_avg_pool:
+                x_visib_cls = self.avg_pool(x_visib_cls)
+            x_visib_cls = x_visib_cls.flatten(1)
+        for fc in self.visib_cls_fcs:
+            x_visib_cls = self.relu(fc(x_visib_cls))
 
         for conv in self.reg_convs:
             x_reg = conv(x_reg)
@@ -174,20 +202,23 @@ class ConvFCBBoxHead(BBoxHead):
         for fc in self.reg_fcs:
             x_reg = self.relu(fc(x_reg))
 
-        cls_score = self.fc_cls(x_cls) if self.with_cls else None
+        object_cls_score = self.fc_object_cls(x_object_cls) if self.with_object_cls else None
+        visib_cls_score = self.fc_visib_cls(x_visib_cls) if self.with_visib_cls else None
         bbox_pred = self.fc_reg(x_reg) if self.with_reg else None
-        return cls_score, bbox_pred
+        return object_cls_score, visib_cls_score ,bbox_pred
 
 
 @HEADS.register_module()
-class Shared2FCBBoxHead(ConvFCBBoxHead):
+class Shared2FCBBoxHead_new(ConvFCBBoxHead_new):
 
     def __init__(self, fc_out_channels=1024, *args, **kwargs):
-        super(Shared2FCBBoxHead, self).__init__(
+        super(Shared2FCBBoxHead_new, self).__init__(
             num_shared_convs=0,
             num_shared_fcs=2,
-            num_cls_convs=0,
-            num_cls_fcs=0,
+            num_object_cls_convs=0,
+            num_object_cls_fcs=0,
+            num_visib_cls_convs=0,
+            num_visib_cls_fcs=0,
             num_reg_convs=0,
             num_reg_fcs=0,
             fc_out_channels=fc_out_channels,
@@ -196,14 +227,16 @@ class Shared2FCBBoxHead(ConvFCBBoxHead):
 
 
 @HEADS.register_module()
-class Shared4Conv1FCBBoxHead(ConvFCBBoxHead):
+class Shared4Conv1FCBBoxHead_new(ConvFCBBoxHead_new):
 
     def __init__(self, fc_out_channels=1024, *args, **kwargs):
-        super(Shared4Conv1FCBBoxHead, self).__init__(
+        super(Shared4Conv1FCBBoxHead_new, self).__init__(
             num_shared_convs=4,
             num_shared_fcs=1,
-            num_cls_convs=0,
-            num_cls_fcs=0,
+            num_object_cls_convs=0,
+            num_object_cls_fcs=0,
+            num_visib_cls_convs=0,
+            num_visib_cls_fcs=0,
             num_reg_convs=0,
             num_reg_fcs=0,
             fc_out_channels=fc_out_channels,

@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader
 
 from .samplers import DistributedGroupSampler, DistributedSampler, GroupSampler
 
+import snoop
+
 if platform.system() != 'Windows':
     # https://github.com/pytorch/pytorch/issues/973
     import resource
@@ -49,7 +51,7 @@ def _concat_dataset(cfg, default_args=None):
 
     return ConcatDataset(datasets, separate_eval)
 
-
+# @snoop
 def build_dataset(cfg, default_args=None):
     from .dataset_wrappers import (ConcatDataset, RepeatDataset,
                                    ClassBalancedDataset)
@@ -72,7 +74,7 @@ def build_dataset(cfg, default_args=None):
 
     return dataset
 
-
+# @snoop
 def build_dataloader(dataset,
                      samples_per_gpu,
                      workers_per_gpu,

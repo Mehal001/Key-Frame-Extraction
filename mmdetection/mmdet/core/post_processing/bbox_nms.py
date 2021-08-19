@@ -1,11 +1,14 @@
+
 import torch
 from mmcv.ops.nms import batched_nms
 
 from mmdet.core.bbox.iou_calculators import bbox_overlaps
-
-
+import snoop
+IS_MY_VERSION = True
+# @snoop
 def multiclass_nms(multi_bboxes,
-                   multi_scores,
+                   multi_cls_scores,
+                   multi_visib_scores,
                    score_thr,
                    nms_cfg,
                    max_num=-1,
@@ -31,66 +34,121 @@ def multiclass_nms(multi_bboxes,
         tuple: (bboxes, labels, indices (optional)), tensors of shape (k, 5),
             (k), and (k). Labels are 0-based.
     """
-    num_classes = multi_scores.size(1) - 1
+    # exit(0)
+    num_obj_classes = multi_cls_scores.size(1) - 1
+    if IS_MY_VERSION:
+        num_visib_classes = multi_visib_scores.size(1) 
     # exclude background category
     if multi_bboxes.shape[1] > 4:
-        bboxes = multi_bboxes.view(multi_scores.size(0), -1, 4)
+        bboxes = multi_bboxes.view(multi_cls_scores.size(0), -1, 4)
     else:
         bboxes = multi_bboxes[:, None].expand(
-            multi_scores.size(0), num_classes, 4)
+            multi_cls_scores.size(0), num_obj_classes, 4)
 
-    scores = multi_scores[:, :-1]
+    cls_scores = multi_cls_scores[:, :-1]
+    if IS_MY_VERSION:
+        visib_scores = multi_visib_scores
 
-    labels = torch.arange(num_classes, dtype=torch.long)
-    labels = labels.view(1, -1).expand_as(scores)
+    labels = torch.arange(num_obj_classes, dtype=torch.long)
+    labels = labels.view(1, -1).expand_as(cls_scores)
 
+    if IS_MY_VERSION:
+        labels_2 = torch.arange(num_visib_classes, dtype=torch.long) + 1
+        labels_2 = labels_2.view(1, -1).expand_as(visib_scores)   
     bboxes = bboxes.reshape(-1, 4)
-    scores = scores.reshape(-1)
+    cls_scores = cls_scores.reshape(-1)
     labels = labels.reshape(-1)
+    if IS_MY_VERSION:
+        visib_scores = visib_scores.reshape(-1)
+        labels_2 = labels_2.reshape(-1)
 
     if not torch.onnx.is_in_onnx_export():
         # NonZero not supported  in TensorRT
         # remove low scoring boxes
-        valid_mask = scores > score_thr
+        valid_mask_cls = cls_scores > score_thr
+        if IS_MY_VERSION:
+            valid_mask_visb = visib_scores > score_thr
     # multiply score_factor after threshold to preserve more bboxes, improve
     # mAP by 1% for YOLOv3
     if score_factors is not None:
         # expand the shape to match original shape of score
         score_factors = score_factors.view(-1, 1).expand(
-            multi_scores.size(0), num_classes)
+            multi_cls_scores.size(0), num_obj_classes)
         score_factors = score_factors.reshape(-1)
-        scores = scores * score_factors
+        cls_scores = cls_scores * score_factors
 
     if not torch.onnx.is_in_onnx_export():
         # NonZero not supported  in TensorRT
-        inds = valid_mask.nonzero(as_tuple=False).squeeze(1)
-        bboxes, scores, labels = bboxes[inds], scores[inds], labels[inds]
+        cls_inds = valid_mask_cls.nonzero(as_tuple=False).squeeze(1)
+        if IS_MY_VERSION:
+            visib_inds = valid_mask_visb.nonzero(as_tuple=False).squeeze(1)
+        if IS_MY_VERSION:
+            bboxes, cls_scores, labels, visib_scores, labels_2 = bboxes[cls_inds], cls_scores[cls_inds], labels[cls_inds], visib_scores[visib_inds], labels_2[visib_inds]
+        else:
+            bboxes, cls_scores, labels = bboxes[cls_inds], cls_scores[cls_inds], labels[cls_inds]
     else:
         # TensorRT NMS plugin has invalid output filled with -1
         # add dummy data to make detection output correct.
         bboxes = torch.cat([bboxes, bboxes.new_zeros(1, 4)], dim=0)
-        scores = torch.cat([scores, scores.new_zeros(1)], dim=0)
+        cls_scores = torch.cat([cls_scores, cls_scores.new_zeros(1)], dim=0)
         labels = torch.cat([labels, labels.new_zeros(1)], dim=0)
+        if IS_MY_VERSION:
+            visib_scores = torch.cat([visib_scores, visib_scores.new_zeros(1)], dim=0)
+            labels_2 = torch.cat([labels_2, labels_2.new_zeros(1)], dim=0)
 
     if bboxes.numel() == 0:
         if torch.onnx.is_in_onnx_export():
             raise RuntimeError('[ONNX Error] Can not record NMS '
                                'as it has not been executed this time')
         if return_inds:
-            return bboxes, labels, inds
+            if IS_MY_VERSION:
+                return bboxes, labels, labels_2, cls_inds
+            else:
+                return bboxes, labels, cls_inds
         else:
-            return bboxes, labels
+            if IS_MY_VERSION:
+                return bboxes, labels
+            else:                 
+                return bboxes, labels
 
-    dets, keep = batched_nms(bboxes, scores, labels, nms_cfg)
+    dets_cls, keep_cls = batched_nms(bboxes, cls_scores, labels, nms_cfg)
+    # if IS_MY_VERSION:
+    #     dets_visib, keep_visib = batched_nms(bboxes_visib, visib_scores, labels_2, nms_cfg)
 
     if max_num > 0:
-        dets = dets[:max_num]
-        keep = keep[:max_num]
+        dets = dets_cls[:max_num]
+        # print(dets)
+        keep_cls = keep_cls[:max_num]
+        if IS_MY_VERSION:
+            # exit(0)
+            dets_visib = dets[:,:-1]
+            bboxes_test = multi_bboxes.view(multi_cls_scores.size(0), -1, 4)
+            inds =[]
+            for i in range(0, len(bboxes_test)):
+                for box in bboxes_test[i]:
+                    for det in dets_visib:
+                        if torch.equal(det,box):
+                            inds.append(i)
+            #gather 
+            scr = torch.max(multi_visib_scores[inds], 1)
+            visib_scr = scr[0]
+            visib_scr = visib_scr.unsqueeze(1)
+            visib_labels = scr[1]+1
+            visib_labels = visib_labels.unsqueeze(1)
+            visib_labels = visib_labels.type(torch.float32)
+            dets = torch.cat([dets, visib_scr, visib_labels], dim=1)
+            # print(dets)
 
     if return_inds:
-        return dets, labels[keep], keep
+        if IS_MY_VERSION:
+            return dets, labels[keep_cls], keep_cls
+        else:
+            return dets, labels[keep_cls], keep_cls
     else:
-        return dets, labels[keep]
+        if IS_MY_VERSION:
+            return dets, labels[keep_cls]
+        else:
+            return dets, labels[keep_cls]
 
 
 def fast_nms(multi_bboxes,

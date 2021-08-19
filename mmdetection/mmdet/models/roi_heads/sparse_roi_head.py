@@ -137,7 +137,7 @@ class SparseRoIHead(CascadeRoIHead):
             detach_proposal_list=[item.detach() for item in proposal_list])
 
         return bbox_results
-
+    
     def forward_train(self,
                       x,
                       proposal_boxes,
