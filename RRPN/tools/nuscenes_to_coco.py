@@ -144,7 +144,7 @@ def main():
                 bbox = nuscenes_box_to_coco(ann, np.array(cam_cs_record['camera_intrinsic']), 
                                             (img_width, img_height))
                 if IS_MY_VERSION_2:
-                    visibility = nusc.get('sample_annotation',ann.token)['visibility_token']
+                    visibility = int(nusc.get('sample_annotation',ann.token)['visibility_token'])
                     coco_ann =  coco_dataset.createAnn(bbox, cat_id, visibility)
                 else:
                     coco_ann = coco_dataset.createAnn(bbox, cat_id)

@@ -110,8 +110,8 @@ def main():
     if args.eval and args.format_only:
         raise ValueError('--eval and --format_only cannot be both specified')
 
-    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
-        raise ValueError('The output file must be a pkl file.')
+    # if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
+    #     raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:

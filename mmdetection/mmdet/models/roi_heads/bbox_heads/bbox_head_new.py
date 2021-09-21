@@ -472,7 +472,7 @@ class BBoxHead_new(BaseModule):
                                                      cfg.score_thr, cfg.nms,
                                                      cfg.max_per_img)
             else:
-                det_bbox, det_label = bbox, cls_score, visib_score
+                det_bbox, det_label = bbox, cls_score
             det_bboxes.append(det_bbox)
             det_labels.append(det_label)
             

@@ -23,4 +23,12 @@ mmdetection/results.bbox.json
 mmdetection/cls_reg_losses_153609.pdf
 mmdetection/comp_153609_104917.pdf
 mmdetection/losses.pdf
-
+mmdetection/results_20210810_2.json
+mmdetection/results_visibility_20210822.json
+mmdetection/faster_rcnn_r50_caffe_fpn_mstrain_1x_nucoco_custom_20210822
+mmdetection/faster_rcnn_r50_caffe_fpn_mstrain_1x_nucoco_custom_20210824
+mmdetection/results_visibility_20210824.json
+mmdetection/visibility_results_mini_20210919
+mmdetection/visibility_results_fulldataset_2021092
+mmdetection/visibility_results_fulldataset_20210921
+*.json

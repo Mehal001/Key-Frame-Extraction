@@ -1,5 +1,6 @@
 
 import torch
+import numpy as np 
 from mmcv.ops.nms import batched_nms
 
 from mmdet.core.bbox.iou_calculators import bbox_overlaps
@@ -36,8 +37,8 @@ def multiclass_nms(multi_bboxes,
     """
     # exit(0)
     num_obj_classes = multi_cls_scores.size(1) - 1
-    if IS_MY_VERSION:
-        num_visib_classes = multi_visib_scores.size(1) 
+    # if IS_MY_VERSION:
+    #     num_visib_classes = multi_visib_scores.size(1) 
     # exclude background category
     if multi_bboxes.shape[1] > 4:
         bboxes = multi_bboxes.view(multi_cls_scores.size(0), -1, 4)
@@ -46,28 +47,28 @@ def multiclass_nms(multi_bboxes,
             multi_cls_scores.size(0), num_obj_classes, 4)
 
     cls_scores = multi_cls_scores[:, :-1]
-    if IS_MY_VERSION:
-        visib_scores = multi_visib_scores
+    # if IS_MY_VERSION:
+    #     visib_scores = multi_visib_scores
 
     labels = torch.arange(num_obj_classes, dtype=torch.long)
     labels = labels.view(1, -1).expand_as(cls_scores)
 
-    if IS_MY_VERSION:
-        labels_2 = torch.arange(num_visib_classes, dtype=torch.long) + 1
-        labels_2 = labels_2.view(1, -1).expand_as(visib_scores)   
+    # if IS_MY_VERSION:
+    #     labels_2 = torch.arange(num_visib_classes, dtype=torch.long) + 1
+    #     labels_2 = labels_2.view(1, -1).expand_as(visib_scores)   
     bboxes = bboxes.reshape(-1, 4)
     cls_scores = cls_scores.reshape(-1)
     labels = labels.reshape(-1)
-    if IS_MY_VERSION:
-        visib_scores = visib_scores.reshape(-1)
-        labels_2 = labels_2.reshape(-1)
+    # if IS_MY_VERSION:
+    #     visib_scores = visib_scores.reshape(-1)
+    #     labels_2 = labels_2.reshape(-1)
 
     if not torch.onnx.is_in_onnx_export():
         # NonZero not supported  in TensorRT
         # remove low scoring boxes
         valid_mask_cls = cls_scores > score_thr
-        if IS_MY_VERSION:
-            valid_mask_visb = visib_scores > score_thr
+        # if IS_MY_VERSION:
+        #     valid_mask_visb = visib_scores > score_thr
     # multiply score_factor after threshold to preserve more bboxes, improve
     # mAP by 1% for YOLOv3
     if score_factors is not None:
@@ -80,41 +81,38 @@ def multiclass_nms(multi_bboxes,
     if not torch.onnx.is_in_onnx_export():
         # NonZero not supported  in TensorRT
         cls_inds = valid_mask_cls.nonzero(as_tuple=False).squeeze(1)
-        if IS_MY_VERSION:
-            visib_inds = valid_mask_visb.nonzero(as_tuple=False).squeeze(1)
-        if IS_MY_VERSION:
-            bboxes, cls_scores, labels, visib_scores, labels_2 = bboxes[cls_inds], cls_scores[cls_inds], labels[cls_inds], visib_scores[visib_inds], labels_2[visib_inds]
-        else:
-            bboxes, cls_scores, labels = bboxes[cls_inds], cls_scores[cls_inds], labels[cls_inds]
+        # if IS_MY_VERSION:
+        #     visib_inds = valid_mask_visb.nonzero(as_tuple=False).squeeze(1)
+        # if IS_MY_VERSION:
+        #     bboxes, cls_scores, labels, visib_scores, labels_2 = bboxes[cls_inds], cls_scores[cls_inds], labels[cls_inds], visib_scores[visib_inds], labels_2[visib_inds]
+        # else:
+        bboxes, cls_scores, labels = bboxes[cls_inds], cls_scores[cls_inds], labels[cls_inds]
     else:
         # TensorRT NMS plugin has invalid output filled with -1
         # add dummy data to make detection output correct.
         bboxes = torch.cat([bboxes, bboxes.new_zeros(1, 4)], dim=0)
         cls_scores = torch.cat([cls_scores, cls_scores.new_zeros(1)], dim=0)
         labels = torch.cat([labels, labels.new_zeros(1)], dim=0)
-        if IS_MY_VERSION:
-            visib_scores = torch.cat([visib_scores, visib_scores.new_zeros(1)], dim=0)
-            labels_2 = torch.cat([labels_2, labels_2.new_zeros(1)], dim=0)
+        # if IS_MY_VERSION:
+        #     visib_scores = torch.cat([visib_scores, visib_scores.new_zeros(1)], dim=0)
+        #     labels_2 = torch.cat([labels_2, labels_2.new_zeros(1)], dim=0)
 
     if bboxes.numel() == 0:
         if torch.onnx.is_in_onnx_export():
             raise RuntimeError('[ONNX Error] Can not record NMS '
                                'as it has not been executed this time')
         if return_inds:
-            if IS_MY_VERSION:
-                return bboxes, labels, labels_2, cls_inds
-            else:
-                return bboxes, labels, cls_inds
+            # if IS_MY_VERSION:
+            #     return bboxes, labels, labels_2, cls_inds
+            # else:
+            return bboxes, labels, cls_inds
         else:
-            if IS_MY_VERSION:
-                return bboxes, labels
-            else:                 
-                return bboxes, labels
+            return bboxes, labels
 
     dets_cls, keep_cls = batched_nms(bboxes, cls_scores, labels, nms_cfg)
     # if IS_MY_VERSION:
     #     dets_visib, keep_visib = batched_nms(bboxes_visib, visib_scores, labels_2, nms_cfg)
-
+    # print(dets_cls.size(), keep_cls.size())
     if max_num > 0:
         dets = dets_cls[:max_num]
         # print(dets)
@@ -122,31 +120,37 @@ def multiclass_nms(multi_bboxes,
         if IS_MY_VERSION:
             # exit(0)
             dets_visib = dets[:,:-1]
-            bboxes_test = multi_bboxes.view(multi_cls_scores.size(0), -1, 4)
-            inds =[]
-            for i in range(0, len(bboxes_test)):
-                for box in bboxes_test[i]:
-                    for det in dets_visib:
-                        if torch.equal(det,box):
-                            inds.append(i)
-            #gather 
+            bboxes_test = multi_bboxes.view(-1, 4)
+            res = visibility_inds(bboxes_test, dets_visib)
+            inds = res[:,0]
+            v_inds = res[:,1]
+            # inds =[]
+            # for i in range(0, len(bboxes_test)):
+            #     for box in bboxes_test[i]:
+            #         for det in dets_visib:
+            #             if torch.equal(det,box):
+            #                 inds.append(i) 
             scr = torch.max(multi_visib_scores[inds], 1)
             visib_scr = scr[0]
             visib_scr = visib_scr.unsqueeze(1)
             visib_labels = scr[1]+1
             visib_labels = visib_labels.unsqueeze(1)
             visib_labels = visib_labels.type(torch.float32)
-            dets = torch.cat([dets, visib_scr, visib_labels], dim=1)
+            dets_all = torch.cat([dets[v_inds], visib_scr, visib_labels], dim=1)
+            # print(v_inds)
+            # print(keep_cls)
+            keep_cls = keep_cls[v_inds]
+            # exit(0)
             # print(dets)
 
     if return_inds:
         if IS_MY_VERSION:
-            return dets, labels[keep_cls], keep_cls
+            return dets_all, labels[keep_cls], keep_cls
         else:
             return dets, labels[keep_cls], keep_cls
     else:
         if IS_MY_VERSION:
-            return dets, labels[keep_cls]
+            return dets_all, labels[keep_cls]
         else:
             return dets, labels[keep_cls]
 
@@ -224,3 +228,51 @@ def fast_nms(multi_bboxes,
 
     cls_dets = torch.cat([boxes, scores[:, None]], dim=1)
     return cls_dets, classes, coeffs
+
+# @snoop
+def visibility_inds(bboxes_test, dets_visb):
+    a = torch.cat((bboxes_test.transpose(0,1), dets_visb.transpose(0,1)),1)
+    A = a.detach().cpu().numpy()
+    res = duplicate_columns(A)
+
+    inds = []
+    v_inds = []
+    # r1 = []
+    # r0 = []
+    for r in res:
+        # r0.append(r[0])
+        # r1.append(r[1])
+        if r[1]<bboxes_test.shape[0]:
+            continue
+        else:
+            inds.append(int(r[0]/10))
+            v_inds.append(r[1]-bboxes_test.shape[0])
+    
+    inds = np.array(inds)
+    v_inds=np.array(v_inds)
+    # print(r0)
+    # print(r1)
+    # print(inds)
+    # print(v_inds)
+    inds = inds.reshape(len(inds),1)
+    v_inds = v_inds.reshape(len(v_inds),1)
+    # inds = np.array(inds[:dets_visb.shape[0]])
+    # v_inds = np.array(v_inds[:dets_visb.shape[0]])
+    # print(np.transpose(inds))
+    # print(np.transpose(v_inds))
+    res = np.concatenate((inds,v_inds), axis=1)
+
+    res = res[res[:, 0].argsort()]  
+    res = res[res[:, 1].argsort(kind='mergesort')] 
+
+    # print(len(res))
+
+    return res
+# @snoop
+def duplicate_columns(data, minoccur=2):
+    ind = np.lexsort(data)
+    diff = np.any(data.T[ind[1:]] != data.T[ind[:-1]], axis=1)
+    edges = np.where(diff)[0] + 1
+    result = np.split(ind, edges)
+    result = [group for group in result if len(group) >= minoccur]
+    return result

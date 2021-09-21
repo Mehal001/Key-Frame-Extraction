@@ -9,7 +9,7 @@ from mmdet.core import (bbox2roi, bbox_mapping, merge_aug_bboxes,
 logger = logging.getLogger(__name__)
 import snoop
 
-IS_MY_VERSION = True 
+IS_MY_VERSION = True
 
 if sys.version_info >= (3, 7):
     from mmdet.utils.contextmanagers import completed

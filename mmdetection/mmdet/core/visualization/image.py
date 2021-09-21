@@ -75,19 +75,14 @@ def imshow_det_bboxes(img,
         f' labels ndim should be 1, but its ndim is {labels.ndim}.'
     assert bboxes.shape[0] == labels.shape[0], \
         'bboxes.shape[0] and labels.shape[0] should have the same length.'
-    # if IS_MY_VERSION:
-    #     assert bboxes.shape[1] == 6 or bboxes.shape[1] == 7, \
-    #     f' bboxes.shape[1] should be 6 or 7, but its {bboxes.shape[1]}.'
-    # else:
-    #     assert bboxes.shape[1] == 4 or bboxes.shape[1] == 5, \
-    #         f' bboxes.shape[1] should be 4 or 5, but its {bboxes.shape[1]}.'
+    if not IS_MY_VERSION:
+        assert bboxes.shape[1] == 4 or bboxes.shape[1] == 5, \
+            f' bboxes.shape[1] should be 4 or 5, but its {bboxes.shape[1]}.'
     img = mmcv.imread(img).astype(np.uint8)
 
     if score_thr > 0:
-        # if IS_MY_VERSION:
-        #     assert bboxes.shape[1] == 7
-        # else:
-        #     assert bboxes.shape[1] == 5
+        if not IS_MY_VERSION:
+            assert bboxes.shape[1] == 5
         if IS_MY_VERSION:
             scores = bboxes[:, 4]
         else:            
@@ -147,7 +142,8 @@ def imshow_det_bboxes(img,
             label] if class_names is not None else f'class {label}'
         if len(bbox) > 4:
             if IS_MY_VERSION:
-                label_text += f'|{bbox[4]:.02f}'
+                # label_text += f'|{bbox[4]:.02f}' # class name and class score on each image
+                label_text += f'|{bbox[6]:.02f}' # class name and visibility label on each image
             else:
                 label_text += f'|{bbox[-1]:.02f}'
         ax.text(
